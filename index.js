@@ -1,12 +1,10 @@
 const fs = require("fs");
 const path = require("path");
+const readline = require("readline");
 const { fileExists, findFile, createFile } = require("./fileScanner");
 const { fixImport } = require("./fileParser");
 
-// Directory where the project is located
 const projectRoot = path.join(__dirname, "test-project");
-
-// List of files to scan
 const filesToCheck = [
     path.join(projectRoot, "index.html"),
     path.join(projectRoot, "script.js"),
@@ -14,8 +12,8 @@ const filesToCheck = [
 ];
 
 console.log("🔍 Scanning for missing files...");
+let missingFiles = [];
 
-// Scan files for missing dependencies
 filesToCheck.forEach(file => {
     if (fs.existsSync(file)) {
         let content = fs.readFileSync(file, "utf8");
@@ -28,23 +26,47 @@ filesToCheck.forEach(file => {
 
             if (!fileExists(absolutePath)) {
                 console.log(`🚨 Missing File Detected in ${file}: ${importedPath}`);
-                let correctPath = findFile(projectRoot, path.basename(importedPath));
-
-                if (correctPath) {
-                    let relativePath = path.relative(path.dirname(file), correctPath).replace(/\\/g, "/");
-                    if (!relativePath.startsWith(".")) {
-                        relativePath = "./" + relativePath;
-                    }
-                    fixImport(file, importedPath, relativePath);
-                } else {
-                    console.log(`❌ Could not find ${importedPath} anywhere in the project.`);
-                    // Auto-create the missing file
-                    createFile(absolutePath);
-                    console.log(`✅ New empty file created: ${absolutePath}`);
-                }
+                missingFiles.push({ file, missingPath: importedPath, absolutePath });
             }
         }
     }
 });
 
-console.log("✅ Auto-fix completed!");
+if (missingFiles.length === 0) {
+    console.log("✅ No missing files detected. Everything is fine!");
+    process.exit(0);
+}
+
+// Prompt user using readline
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+rl.question(`Found ${missingFiles.length} missing files. Do you want to fix them? (Y/N) `, (answer) => {
+    const userChoice = answer.trim().toUpperCase();
+
+    if (userChoice === "Y") {
+        missingFiles.forEach(({ file, missingPath, absolutePath }) => {
+            let correctPath = findFile(projectRoot, path.basename(missingPath));
+
+            if (correctPath) {
+                let relativePath = path.relative(path.dirname(file), correctPath).replace(/\\/g, "/");
+                if (!relativePath.startsWith(".")) {
+                    relativePath = "./" + relativePath;
+                }
+                fixImport(file, missingPath, relativePath);
+                console.log(`✅ Fixed import in ${file}: Updated path to ${relativePath}`);
+            } else {
+                console.log(`❌ Could not find ${missingPath}. Creating a new file...`);
+                createFile(absolutePath);
+            }
+        });
+
+        console.log("✅ Auto-fix completed!");
+    } else {
+        console.log("❌ Skipping auto-fix as per user choice.");
+    }
+
+    rl.close();
+});
